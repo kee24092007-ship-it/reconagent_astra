@@ -289,6 +289,44 @@ def ai_triage(payload: AiTriagePayload):
             "explanation": "Auto-calculated rule offset for Indian Gateway variance."
         }
     }
+class ChatPayload(BaseModel):
+    query: str
+
+@app.post("/api/chat/query")
+def chat_query(payload: ChatPayload):
+    api_key = os.getenv("GEMINI_API_KEY")
+    
+    # Gather summary data from sqlite to give context to the AI CFO agent
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*), SUM(amount) FROM transactions")
+    tx_count, total_vol = cursor.fetchone()
+    cursor.execute("SELECT id, status, discrepancy_reason FROM transactions WHERE status != 'Exact Match'")
+    discrepancies = cursor.fetchall()
+    conn.close()
+
+    context_summary = f"Total Transactions: {tx_count}, Total Volume: ₹{total_vol or 0}. Discrepancies: {discrepancies}"
+
+    if api_key and api_key != "YOUR_GEMINI_API_KEY_HERE":
+        try:
+            client = genai.Client(api_key=api_key)
+            prompt = (
+                f"You are an expert CFO AI Agent for an enterprise reconciliation platform. "
+                f"Here is the current ledger context: {context_summary}. "
+                f"Answer the user's question accurately, professionally, and concisely in INR context: '{payload.query}'"
+            )
+            response = client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=prompt,
+            )
+            return {"answer": response.text}
+        except Exception as e:
+            print("Gemini Chat Error:", e)
+
+    # Fallback response if API key is not active
+    return {
+        "answer": f"CFO AI Agent (Offline Mode): I received your query: '{payload.query}'. Your current ledger volume is healthy, but please configure a valid GEMINI_API_KEY to activate live AI answers."
+    }
 
 @app.get("/api/export/dossier")
 def export_dossier():
