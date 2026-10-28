@@ -21,9 +21,9 @@ venv\Scripts\activate
 source venv/bin/activate
 
 pip install -r requirements.txt
-uvicorn app.main:app --reload --port 8000
+uvicorn app.main:app --reload --port 5000
 ```
-*Backend runs at:* `http://localhost:8000`
+*Backend runs at:* `http://localhost:5000`
 
 ### 2. Start Frontend UI (React + Tailwind + Vite)
 ```bash
