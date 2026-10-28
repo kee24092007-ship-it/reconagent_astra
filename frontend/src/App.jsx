@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from "react";
 
 export default function App() {
+  // Production Backend URL on Render
+  const API_BASE_URL = "https://reconagent-astra.onrender.com";
+
   // Authentication State
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isSigningUp, setIsSigningUp] = useState(false);
@@ -41,15 +44,15 @@ export default function App() {
   // Fetch Dashboard Data from FastAPI Backend
   const fetchDashboardData = async () => {
     try {
-      const txRes = await fetch("http://localhost:5000/api/transactions");
+      const txRes = await fetch(`${API_BASE_URL}/api/transactions`);
       const txData = await txRes.json();
       setTransactions(txData);
 
-      const metricsRes = await fetch("http://localhost:5000/api/metrics");
+      const metricsRes = await fetch(`${API_BASE_URL}/api/metrics`);
       const metricsData = await metricsRes.json();
       setMetrics(metricsData);
 
-      const logsRes = await fetch("http://localhost:5000/api/audit-logs");
+      const logsRes = await fetch(`${API_BASE_URL}/api/audit-logs`);
       const logsData = await logsRes.json();
       setAuditLogs(logsData);
     } catch (error) {
@@ -61,8 +64,8 @@ export default function App() {
   const handleAuthSubmit = async (e) => {
     e.preventDefault();
     const endpoint = isSigningUp
-      ? "http://localhost:5000/api/auth/register"
-      : "http://localhost:5000/api/auth/login";
+      ? `${API_BASE_URL}/api/auth/register`
+      : `${API_BASE_URL}/api/auth/login`;
 
     try {
       const res = await fetch(endpoint, {
@@ -86,7 +89,7 @@ export default function App() {
     } catch (error) {
       console.error("Login error:", error);
       alert(
-        "Could not connect to FastAPI backend. Make sure uvicorn is running on port 5000.",
+        "Could not connect to FastAPI backend. Make sure uvicorn is running.",
       );
     }
   };
@@ -130,7 +133,7 @@ export default function App() {
   // Download Audit Dossier Report from Backend
   const handleDownloadReport = async () => {
     try {
-      const res = await fetch("http://localhost:5000/api/export/dossier");
+      const res = await fetch(`${API_BASE_URL}/api/export/dossier`);
       const blob = await res.blob();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -154,7 +157,7 @@ export default function App() {
     setAiQuestion("");
 
     try {
-      const res = await fetch("http://localhost:5000/api/chat/query", {
+      const res = await fetch(`${API_BASE_URL}/api/chat/query`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ query: currentQuery }),
@@ -172,33 +175,31 @@ export default function App() {
     }
   };
 
-  // File Upload OCR auto-ingestion
   // File Upload OCR auto-ingestion with live data refresh
-const handleFileUpload = async (e) => {
-  const file = e.target.files[0];
-  if (!file) return;
+  const handleFileUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
 
-  const formData = new FormData();
-  formData.append("file", file);
+    const formData = new FormData();
+    formData.append("file", file);
 
-  try {
-    const res = await fetch("http://localhost:5000/api/ocr-scan", {
-      method: "POST",
-      body: formData,
-    });
-    
-    if (res.ok) {
-      alert(`Successfully scanned and securely logged ${file.name}!`);
-      // Refresh all transactions and metrics so Auditor & Manager see it instantly!
-      await fetchDashboardData();
-      setActiveTab('bills'); // Automatically switch back to bills table tab
-    } else {
-      alert("OCR Upload failed.");
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/ocr-scan`, {
+        method: "POST",
+        body: formData,
+      });
+
+      if (res.ok) {
+        alert(`Successfully scanned and securely logged ${file.name}!`);
+        await fetchDashboardData();
+        setActiveTab("bills");
+      } else {
+        alert("OCR Upload failed.");
+      }
+    } catch (error) {
+      console.error("OCR upload error:", error);
     }
-  } catch (error) {
-    console.error("OCR upload error:", error);
-  }
-};
+  };
 
   // Render Login Page if not logged in
   if (!isLoggedIn) {
@@ -430,7 +431,6 @@ const handleFileUpload = async (e) => {
         {/* Tab 1: Transactions & Exceptions */}
         {activeTab === "bills" && (
           <>
-            {/* Search Bar & Source Filter */}
             <div className="flex flex-col sm:flex-row gap-3 justify-between items-center">
               <div className="relative w-full sm:w-96">
                 <span className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-slate-400">
@@ -445,7 +445,6 @@ const handleFileUpload = async (e) => {
                 />
               </div>
 
-              {/* Filter Dropdown */}
               <div className="flex items-center space-x-2 w-full sm:w-auto justify-end">
                 <span className="text-xs font-semibold text-slate-600 uppercase">
                   Filter Source:
@@ -463,7 +462,6 @@ const handleFileUpload = async (e) => {
               </div>
             </div>
 
-            {/* Explanation Note for Automatic Feed */}
             <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-800 flex items-center space-x-2">
               <span>💡</span>
               <span>
@@ -473,7 +471,6 @@ const handleFileUpload = async (e) => {
               </span>
             </div>
 
-            {/* Table Section */}
             <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-sm text-slate-700">
@@ -572,7 +569,7 @@ const handleFileUpload = async (e) => {
               Secure Receipt OCR Ingestion
             </h3>
             <p className="text-sm text-slate-500 max-w-md mx-auto">
-              Upload your shop bills. The AI scans and securely logs it
+              Upload your shop bills / GPay PDF statements. The AI scans and securely logs it
               specifically under your account vault ({email}).
             </p>
             <label className="inline-block px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-sm rounded-lg shadow-sm cursor-pointer transition-colors">
