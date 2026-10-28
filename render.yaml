@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: reconagent-api
+    runtime: python
+    plan: starter
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    disk:
+      name: reconagent-data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: DATABASE_PATH
+        value: /var/data/reconagent_persistent.db
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: FRONTEND_ORIGINS
+        value: https://your-project.vercel.app
+      - key: GEMINI_API_KEY
+        sync: false

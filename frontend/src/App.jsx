@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from "react";
 
 export default function App() {
-  // Production Backend URL on Render
-  const API_BASE_URL = "https://reconagent-astra.onrender.com";
+  // Set VITE_API_BASE_URL in frontend/.env.local and in Vercel project settings.
+  const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "http://localhost:5000").replace(/\/$/, "");
+  const [accessToken, setAccessToken] = useState("");
+  const authHeaders = () => accessToken ? { Authorization: `Bearer ${accessToken}` } : {};
 
   // Authentication State
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -44,20 +46,39 @@ export default function App() {
   // Fetch Dashboard Data from FastAPI Backend
   const fetchDashboardData = async () => {
     try {
-      const txRes = await fetch(`${API_BASE_URL}/api/transactions`);
+      const txRes = await fetch(`${API_BASE_URL}/api/transactions`, { headers: authHeaders() });
+      if (!txRes.ok) throw new Error("Unable to load transactions.");
       const txData = await txRes.json();
       setTransactions(txData);
 
-      const metricsRes = await fetch(`${API_BASE_URL}/api/metrics`);
+      const metricsRes = await fetch(`${API_BASE_URL}/api/metrics`, { headers: authHeaders() });
+      if (!metricsRes.ok) throw new Error("Unable to load metrics.");
       const metricsData = await metricsRes.json();
       setMetrics(metricsData);
 
-      const logsRes = await fetch(`${API_BASE_URL}/api/audit-logs`);
+      const logsRes = await fetch(`${API_BASE_URL}/api/audit-logs`, { headers: authHeaders() });
+      if (!logsRes.ok) throw new Error("Unable to load audit logs.");
       const logsData = await logsRes.json();
       setAuditLogs(logsData);
     } catch (error) {
       console.error("Backend connection error:", error);
     }
+  };
+
+  // Fetch initial data immediately after login, before state updates are reflected.
+  const fetchDashboardDataWithToken = async (token) => {
+    const headers = { Authorization: `Bearer ${token}` };
+    const [txRes, metricsRes, logsRes] = await Promise.all([
+      fetch(`${API_BASE_URL}/api/transactions`, { headers }),
+      fetch(`${API_BASE_URL}/api/metrics`, { headers }),
+      fetch(`${API_BASE_URL}/api/audit-logs`, { headers }),
+    ]);
+    if (![txRes, metricsRes, logsRes].every((res) => res.ok)) {
+      throw new Error("Login succeeded, but dashboard data could not be loaded.");
+    }
+    setTransactions(await txRes.json());
+    setMetrics(await metricsRes.json());
+    setAuditLogs(await logsRes.json());
   };
 
   // Auth Login / Register Handler
@@ -84,8 +105,10 @@ export default function App() {
         return;
       }
 
+      if (!data.access_token) throw new Error("The server did not return a session token.");
+      setAccessToken(data.access_token);
       setIsLoggedIn(true);
-      await fetchDashboardData();
+      await fetchDashboardDataWithToken(data.access_token);
     } catch (error) {
       console.error("Login error:", error);
       alert(
@@ -96,6 +119,7 @@ export default function App() {
 
   const handleLogout = () => {
     setIsLoggedIn(false);
+    setAccessToken("");
     setEmail("");
     setPassword("");
     setTransactions([]);
@@ -133,7 +157,8 @@ export default function App() {
   // Download Audit Dossier Report from Backend
   const handleDownloadReport = async () => {
     try {
-      const res = await fetch(`${API_BASE_URL}/api/export/dossier`);
+      const res = await fetch(`${API_BASE_URL}/api/export/dossier`, { headers: authHeaders() });
+      if (!res.ok) throw new Error("Report download failed.");
       const blob = await res.blob();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -159,10 +184,11 @@ export default function App() {
     try {
       const res = await fetch(`${API_BASE_URL}/api/chat/query`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...authHeaders() },
         body: JSON.stringify({ query: currentQuery }),
       });
       const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "AI request failed.");
       setAiChatHistory([...newHistory, { sender: "ai", text: data.answer }]);
     } catch (error) {
       setAiChatHistory([
@@ -186,15 +212,17 @@ export default function App() {
     try {
       const res = await fetch(`${API_BASE_URL}/api/ocr-scan`, {
         method: "POST",
+        headers: authHeaders(),
         body: formData,
       });
 
       if (res.ok) {
-        alert(`Successfully scanned and securely logged ${file.name}!`);
+        alert(`Scanned ${file.name}. The extracted amount is marked Pending Review.`);
         await fetchDashboardData();
         setActiveTab("bills");
       } else {
-        alert("OCR Upload failed.");
+        const errorData = await res.json().catch(() => ({}));
+        alert(errorData.detail || "OCR upload failed.");
       }
     } catch (error) {
       console.error("OCR upload error:", error);
