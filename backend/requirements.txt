@@ -6,3 +6,4 @@ pypdf
 google-genai
 requests
 python-multipart
+email-validator
