@@ -32,6 +32,7 @@ export default function App() {
   const [showAIModal, setShowAIModal] = useState(false);
   const [showHelpModal, setShowHelpModal] = useState(false);
   const [selectedBill, setSelectedBill] = useState(null);
+  const [reviewInProgress, setReviewInProgress] = useState(false);
   const [aiQuestion, setAiQuestion] = useState("");
   const [aiChatHistory, setAiChatHistory] = useState([
     {
@@ -123,6 +124,42 @@ export default function App() {
     setEmail("");
     setPassword("");
     setTransactions([]);
+  };
+
+  // Approve or reject a transaction that is waiting for manual review.
+  const handleReviewTransaction = async (status) => {
+    if (!selectedBill || selectedBill.status !== "Pending Review" || reviewInProgress) return;
+    const action = status === "Approved" ? "approve" : "reject";
+    const confirmed = window.confirm(
+      `Are you sure you want to ${action} transaction ${selectedBill.id} for ₹${Number(selectedBill.amount).toLocaleString()}?`
+    );
+    if (!confirmed) return;
+
+    setReviewInProgress(true);
+    try {
+      const res = await fetch(
+        `${API_BASE_URL}/api/transactions/${encodeURIComponent(selectedBill.id)}/review`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...authHeaders() },
+          body: JSON.stringify({ status }),
+        }
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || `Could not ${action} this transaction.`);
+
+      setSelectedBill((current) =>
+        current && current.id === data.id
+          ? { ...current, status: data.status, discrepancy_reason: data.discrepancy_reason }
+          : current
+      );
+      await fetchDashboardData();
+      alert(`Transaction ${data.id} was ${status.toLowerCase()}.`);
+    } catch (error) {
+      alert(error.message || `Could not ${action} this transaction.`);
+    } finally {
+      setReviewInProgress(false);
+    }
   };
 
   // Filter bills based on search query and source filter
@@ -816,10 +853,30 @@ export default function App() {
                 </div>
               )}
             </div>
-            <div className="pt-2 flex justify-end">
+            <div className="pt-2 flex flex-wrap justify-between gap-2">
+              <div className="flex flex-wrap gap-2">
+                {selectedBill.status === "Pending Review" && (
+                  <>
+                    <button
+                      onClick={() => handleReviewTransaction("Rejected")}
+                      disabled={reviewInProgress}
+                      className="px-4 py-2 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white font-semibold text-sm rounded-lg shadow-sm transition-colors"
+                    >
+                      {reviewInProgress ? "Saving..." : "Reject"}
+                    </button>
+                    <button
+                      onClick={() => handleReviewTransaction("Approved")}
+                      disabled={reviewInProgress}
+                      className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-semibold text-sm rounded-lg shadow-sm transition-colors"
+                    >
+                      {reviewInProgress ? "Saving..." : "Approve Transaction"}
+                    </button>
+                  </>
+                )}
+              </div>
               <button
                 onClick={() => setSelectedBill(null)}
-                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-sm rounded-lg shadow-sm transition-colors"
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 font-semibold text-sm rounded-lg shadow-sm transition-colors"
               >
                 Close Secure View
               </button>
