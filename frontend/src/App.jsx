@@ -828,6 +828,11 @@ export default function App() {
                   {selectedBill.status}
                 </span>
               </div>
+              {selectedBill.status === "Duplicate Suspected" && (
+                <div className="p-2 bg-rose-50 border border-rose-200 rounded text-xs text-rose-800">
+                  <strong>Duplicate alert:</strong> Compare the source bank statement and related transactions before approving. Approval records a human review decision; it does not reverse or remove a payment.
+                </div>
+              )}
               {selectedBill.discrepancy_reason && (
                 <div className="p-2 bg-amber-50 rounded text-xs text-amber-800">
                   <strong>Discrepancy:</strong>{" "}
@@ -855,7 +860,7 @@ export default function App() {
             </div>
             <div className="pt-2 flex flex-wrap justify-between gap-2">
               <div className="flex flex-wrap gap-2">
-                {selectedBill.status === "Pending Review" && (
+                {["Pending Review", "Duplicate Suspected"].includes(selectedBill.status) && (
                   <>
                     <button
                       onClick={() => handleReviewTransaction("Rejected")}
