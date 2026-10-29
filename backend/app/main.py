@@ -254,13 +254,16 @@ def review_transaction(
         ).fetchone()
         if row is None:
             raise HTTPException(status_code=404, detail="Transaction not found.")
-        if row["status"] != "Pending Review":
+        reviewable_statuses = ("Pending Review", "Duplicate Suspected")
+        if row["status"] not in reviewable_statuses:
             raise HTTPException(
                 status_code=409,
-                detail=f"Only Pending Review transactions can be reviewed. Current status: {row['status']}.",
+                detail=f"Only Pending Review or Duplicate Suspected transactions can be reviewed. Current status: {row['status']}.",
             )
+        if row["status"] == "Duplicate Suspected" and payload.status == "Approved":
+            reason = f"Duplicate alert manually reviewed and approved by {user['email']}; verify source evidence."
         conn.execute(
-            "UPDATE transactions SET status=?, discrepancy_reason=? WHERE id=? AND status='Pending Review'",
+            "UPDATE transactions SET status=?, discrepancy_reason=? WHERE id=? AND status IN ('Pending Review', 'Duplicate Suspected')",
             (payload.status, reason, transaction_id),
         )
 
@@ -287,7 +290,7 @@ def get_metrics(user=Depends(current_user)):
             "SELECT SUM(amount) FROM transactions WHERE status NOT IN ('Exact Match', 'Approved')"
         ).fetchone()[0] or 0.0
         pending = conn.execute(
-            "SELECT COUNT(*) FROM transactions WHERE status='Pending Review'"
+            "SELECT COUNT(*) FROM transactions WHERE status IN ('Pending Review', 'Duplicate Suspected')"
         ).fetchone()[0]
     return {
         "total_vol": round(total_vol, 2),
