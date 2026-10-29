@@ -10,7 +10,7 @@ import time
 import base64
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Literal
 
 import pypdf
 from dotenv import load_dotenv
@@ -163,6 +163,10 @@ class ChatPayload(BaseModel):
     query: str = Field(min_length=1, max_length=2000)
 
 
+class ReviewPayload(BaseModel):
+    status: Literal["Approved", "Rejected"]
+
+
 @app.get("/")
 def root():
     return {"status": "ok", "service": "ReconAgent API"}
@@ -228,14 +232,69 @@ def get_transactions(user=Depends(current_user)):
     return result
 
 
+@app.post("/api/transactions/{transaction_id}/review")
+def review_transaction(
+    transaction_id: str,
+    payload: ReviewPayload,
+    user=Depends(current_user),
+):
+    # Only authenticated users with a recognized application role can review records.
+    if user["role"] not in ALLOWED_ROLES:
+        raise HTTPException(status_code=403, detail="You are not allowed to review transactions.")
+
+    reviewed_at = datetime.now(timezone.utc).isoformat()
+    if payload.status == "Approved":
+        reason = f"Manually approved by {user['email']}"
+    else:
+        reason = "Rejected by reviewer; verify the source document and correct the record."
+
+    with connect_db() as conn:
+        row = conn.execute(
+            "SELECT id, status FROM transactions WHERE id=?", (transaction_id,)
+        ).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail="Transaction not found.")
+        if row["status"] != "Pending Review":
+            raise HTTPException(
+                status_code=409,
+                detail=f"Only Pending Review transactions can be reviewed. Current status: {row['status']}.",
+            )
+        conn.execute(
+            "UPDATE transactions SET status=?, discrepancy_reason=? WHERE id=? AND status='Pending Review'",
+            (payload.status, reason, transaction_id),
+        )
+
+    add_audit_log(
+        user["email"],
+        f"Transaction {transaction_id} {payload.status.lower()} at {reviewed_at}",
+    )
+    return {
+        "id": transaction_id,
+        "status": payload.status,
+        "discrepancy_reason": reason,
+        "reviewed_by": user["email"],
+        "reviewed_at": reviewed_at,
+    }
+
+
 @app.get("/api/metrics")
 def get_metrics(user=Depends(current_user)):
     with connect_db() as conn:
         total_vol = conn.execute("SELECT SUM(amount) FROM transactions").fetchone()[0] or 0.0
         exact = conn.execute("SELECT COUNT(*) FROM transactions WHERE status='Exact Match'").fetchone()[0]
         total_cnt = conn.execute("SELECT COUNT(*) FROM transactions").fetchone()[0] or 1
-        total_variance = conn.execute("SELECT SUM(amount) FROM transactions WHERE status!='Exact Match'").fetchone()[0] or 0.0
-    return {"total_vol": round(total_vol, 2), "match_rate": round((exact / total_cnt) * 100, 1), "total_variance": round(total_variance, 2), "pending_auditors": 0}
+        total_variance = conn.execute(
+            "SELECT SUM(amount) FROM transactions WHERE status NOT IN ('Exact Match', 'Approved')"
+        ).fetchone()[0] or 0.0
+        pending = conn.execute(
+            "SELECT COUNT(*) FROM transactions WHERE status='Pending Review'"
+        ).fetchone()[0]
+    return {
+        "total_vol": round(total_vol, 2),
+        "match_rate": round((exact / total_cnt) * 100, 1),
+        "total_variance": round(total_variance, 2),
+        "pending_auditors": pending,
+    }
 
 
 @app.post("/api/ocr-scan")
